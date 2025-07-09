@@ -63,20 +63,20 @@ async function run() {
     const usersCollection = db.collection("user");
     const subscribersCollection = db.collection("subscribers");
     const TrainerCollection = db.collection("trainer");
-//  get data 
+    //  get data
     app.get("/user", async (req, res) => {
       const result = await usersCollection.find().toArray();
       res.send(result);
     });
 
-     app.get('/subscribers',async(req,res)=>{
+    app.get("/subscribers", async (req, res) => {
+      const result = await subscribersCollection
+        .find()
+        .sort({ createdAt: -1 })
+        .toArray();
 
-     
-    const result = await subscribersCollection.find().sort({ createdAt: -1 }).toArray()
-
-        res.send(result)
-
-    })
+      res.send(result);
+    });
 
     // post data
     app.post("/user", async (req, res) => {
@@ -103,16 +103,20 @@ async function run() {
       res.send(result);
     });
 
-    app.post('/subscribers',async(req,res)=>{
+    app.post("/subscribers", async (req, res) => {
+      const subscribersData = req.body;
+      subscribersData.created_at = new Date().toISOString();
+      subscribersData.status = "subscribed";
+      const result = await subscribersCollection.insertOne(subscribersData);
 
-      const subscribersData = req.body
-        subscribersData.created_at = new Date().toISOString();
-      subscribersData.status = 'subscribed' 
-      const result = await subscribersCollection.insertOne(subscribersData) 
+      res.send(result);
+    });
+    app.post("/trainer", async (req, res) => {
+      const trainerData = req.body;
+      const result = await TrainerCollection.insertOne(trainerData);
 
-    res.send(result)
-
-    })
+      res.send(result);
+    });
 
     await client.connect();
     await client.db("admin").command({ ping: 1 });
