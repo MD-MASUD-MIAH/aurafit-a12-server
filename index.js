@@ -88,7 +88,20 @@ async function run() {
       res.send(result);
     });
 
-    
+
+    app.get("/pending-trainer", async (req, res) => {
+  try {
+    const result = await trainerCollection
+      .find({ status: "pending" }) 
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({ error: "Failed to fetch pending trainers." });
+  }
+});
+
     app.get("/class", async (req, res) => {
       const result = await classCollection
         .find()
@@ -99,6 +112,17 @@ async function run() {
     });
 
     app.get("/trainer/:id", async (req, res) => {
+
+      const id = req.params.id 
+
+      const query   = {_id:new ObjectId(id)}
+      const result = await trainerCollection
+        .findOne(query)
+       
+
+      res.send(result);
+    });
+    app.get("/pending/:id", async (req, res) => {
 
       const id = req.params.id 
 
@@ -147,43 +171,74 @@ async function run() {
     });
     app.post("/trainer",verifyToken, async (req, res) => {
       const trainerData = req.body;
+
+      
+      
       const result = await trainerCollection.insertOne(trainerData);
 
       res.send(result);
     });
 
 
-  app.post("/addClass", verifyToken, async (req, res) => {
-  const classData = req.body;
-  const className = classData.name;
+  app.patch("/trainer/approve/:id", async (req, res) => {
+  const id = req.params.id;
 
   try {
-   
-    const matchedTrainers = await trainerCollection
-      .find({ skills: className }) 
-      .limit(5)
-      .project({ fullName: 1, photo: 1 }) 
-      .toArray();
+    // Step 1: Get the trainer data first to find the email
+    const trainer = await trainerCollection.findOne({ _id: new ObjectId(id) });
+    if (!trainer) {
+      return res.status(404).send({ error: "Trainer not found" });
+    }
 
+    const email = trainer.email;
+
+    console.log(email);
     
-    const trainerData = matchedTrainers.map(trainer => ({
-      trainerId: trainer._id.toString(),       
-      fullName: trainer.fullName,
-      trainerPhoto: trainer.photo           
-    }));
+    // Step 2: Update trainerCollection status
+    const trainerUpdateResult = await trainerCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { status: "trainer" } }
+    );
 
-    // 
-    classData.trainers = trainerData;
+    // Step 3: Update usersCollection role
+    const userUpdateResult = await usersCollection.updateOne(
+      { email: email },
+      { $set: { role: "trainer" } }
+    );
 
-    
-    const result = await classCollection.insertOne(classData);
+    res.send({
+      trainerUpdate: trainerUpdateResult,
+      userUpdate: userUpdateResult,
+      message: "Trainer approved successfully",
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).send({ error: "Failed to approve trainer." });
+  }
+});
+
+
+
+  // -------------------------------------// patch method all _________________________
+
+  app.patch("/trainer/approve/:id", async (req, res) => {
+  const id = req.params.id;
+  try {
+    const result = await trainerCollection.updateOne(
+      { _id: new ObjectId(id) },
+      {
+        $set: {
+          status: "trainer",
+        },
+      }
+    );
 
     res.send(result);
   } catch (error) {
-    console.error("Error in adding class:", error);
-    res.status(500).send({ message: "Failed to add class", error });
+    res.status(500).send({ error: "Failed to approve trainer." });
   }
 });
+
 
 
 
