@@ -63,6 +63,7 @@ async function run() {
     const usersCollection = db.collection("user");
     const subscribersCollection = db.collection("subscribers");
     const trainerCollection = db.collection("trainer");
+    const classCollection = db.collection("class");
     //  get data
     app.get("/user", async (req, res) => {
       const result = await usersCollection.find().toArray();
@@ -86,6 +87,17 @@ async function run() {
 
       res.send(result);
     });
+
+    
+    app.get("/class", async (req, res) => {
+      const result = await classCollection
+        .find()
+        .sort({ createdAt: -1 })
+        .toArray();
+
+      res.send(result);
+    });
+
     app.get("/trainer/:id", async (req, res) => {
 
       const id = req.params.id 
@@ -139,6 +151,41 @@ async function run() {
 
       res.send(result);
     });
+
+
+  app.post("/addClass", verifyToken, async (req, res) => {
+  const classData = req.body;
+  const className = classData.name;
+
+  try {
+   
+    const matchedTrainers = await trainerCollection
+      .find({ skills: className }) 
+      .limit(5)
+      .project({ fullName: 1, photo: 1 }) 
+      .toArray();
+
+    
+    const trainerData = matchedTrainers.map(trainer => ({
+      trainerId: trainer._id.toString(),       
+      fullName: trainer.fullName,
+      trainerPhoto: trainer.photo           
+    }));
+
+    // 
+    classData.trainers = trainerData;
+
+    
+    const result = await classCollection.insertOne(classData);
+
+    res.send(result);
+  } catch (error) {
+    console.error("Error in adding class:", error);
+    res.status(500).send({ message: "Failed to add class", error });
+  }
+});
+
+
 
     await client.connect();
     await client.db("admin").command({ ping: 1 });
