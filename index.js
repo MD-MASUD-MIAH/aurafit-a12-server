@@ -34,8 +34,6 @@ const verifyToken = async (req, res, next) => {
 
   const token = authHeaders.split(" ")[1];
 
-  
-
   try {
     const decoded = await admin.auth().verifyIdToken(token);
     req.decoded = decoded;
@@ -81,26 +79,25 @@ async function run() {
 
     app.get("/trainer", async (req, res) => {
       const result = await trainerCollection
-        .find()
+        .find({ status: "trainer" })
         .sort({ createdAt: -1 })
         .toArray();
 
       res.send(result);
     });
 
+    app.get("/pendin  g-trainer", async (req, res) => {
+      try {
+        const result = await trainerCollection
+          .find({ status: "pending" })
 
-    app.get("/pending-trainer", async (req, res) => {
-  try {
-    const result = await trainerCollection
-      .find({ status: "pending" }) 
-      .sort({ createdAt: -1 })
-      .toArray();
+          .toArray();
 
-    res.send(result);
-  } catch (error) {
-    res.status(500).send({ error: "Failed to fetch pending trainers." });
-  }
-});
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ error: "Failed to fetch pending trainers." });
+      }
+    });
 
     app.get("/class", async (req, res) => {
       const result = await classCollection
@@ -112,29 +109,21 @@ async function run() {
     });
 
     app.get("/trainer/:id", async (req, res) => {
+      const id = req.params.id;
 
-      const id = req.params.id 
-
-      const query   = {_id:new ObjectId(id)}
-      const result = await trainerCollection
-        .findOne(query)
-       
+      const query = { _id: new ObjectId(id) };
+      const result = await trainerCollection.findOne(query);
 
       res.send(result);
     });
     app.get("/pending/:id", async (req, res) => {
+      const id = req.params.id;
 
-      const id = req.params.id 
-
-      const query   = {_id:new ObjectId(id)}
-      const result = await trainerCollection
-        .findOne(query)
-       
+      const query = { _id: new ObjectId(id) };
+      const result = await trainerCollection.findOne(query);
 
       res.send(result);
     });
-
-
 
     // post data
     app.post("/user", async (req, res) => {
@@ -169,78 +158,109 @@ async function run() {
 
       res.send(result);
     });
-    app.post("/trainer",verifyToken, async (req, res) => {
+    app.post("/trainer", verifyToken, async (req, res) => {
       const trainerData = req.body;
 
-      
-      
       const result = await trainerCollection.insertOne(trainerData);
 
       res.send(result);
     });
 
+    app.patch("/trainer/approve/:id", async (req, res) => {
+      const id = req.params.id;
 
-  app.patch("/trainer/approve/:id", async (req, res) => {
-  const id = req.params.id;
+      try {
+        // Step 1: Get the trainer data first to find the email
+        const trainer = await trainerCollection.findOne({
+          _id: new ObjectId(id),
+        });
+        if (!trainer) {
+          return res.status(404).send({ error: "Trainer not found" });
+        }
 
-  try {
-    // Step 1: Get the trainer data first to find the email
-    const trainer = await trainerCollection.findOne({ _id: new ObjectId(id) });
-    if (!trainer) {
-      return res.status(404).send({ error: "Trainer not found" });
-    }
+        const email = trainer.email;
 
-    const email = trainer.email;
+        console.log(email);
 
-    console.log(email);
-    
-    // Step 2: Update trainerCollection status
-    const trainerUpdateResult = await trainerCollection.updateOne(
-      { _id: new ObjectId(id) },
-      { $set: { status: "trainer" } }
-    );
+        // Step 2: Update trainerCollection status
+        const trainerUpdateResult = await trainerCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { status: "trainer" } }
+        );
 
-    // Step 3: Update usersCollection role
-    const userUpdateResult = await usersCollection.updateOne(
-      { email: email },
-      { $set: { role: "trainer" } }
-    );
+        // Step 3: Update usersCollection role
+        const userUpdateResult = await usersCollection.updateOne(
+          { email: email },
+          { $set: { role: "trainer" } }
+        );
 
-    res.send({
-      trainerUpdate: trainerUpdateResult,
-      userUpdate: userUpdateResult,
-      message: "Trainer approved successfully",
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).send({ error: "Failed to approve trainer." });
-  }
-});
-
-
-
-  // -------------------------------------// patch method all _________________________
-
-  app.patch("/trainer/approve/:id", async (req, res) => {
-  const id = req.params.id;
-  try {
-    const result = await trainerCollection.updateOne(
-      { _id: new ObjectId(id) },
-      {
-        $set: {
-          status: "trainer",
-        },
+        res.send({
+          trainerUpdate: trainerUpdateResult,
+          userUpdate: userUpdateResult,
+          message: "Trainer approved successfully",
+        });
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ error: "Failed to approve trainer." });
       }
-    );
+    });
 
-    res.send(result);
-  } catch (error) {
-    res.status(500).send({ error: "Failed to approve trainer." });
-  }
-});
+    // -------------------------------------// patch method all _________________________
 
+    app.patch("/trainer/approve/:id", async (req, res) => {
+      const id = req.params.id;
+      try {
+        const result = await trainerCollection.updateOne(
+          { _id: new ObjectId(id) },
+          {
+            $set: {
+              status: "trainer",
+            },
+          }
+        );
 
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ error: "Failed to approve trainer." });
+      }
+    });
 
+    // ------------------------------------- Delete method all ------------------
+
+    app.delete("/trainer/:id", async (req, res) => {
+      const id = req.params.id;
+
+      try {
+        const trainer = await trainerCollection.findOne({
+          _id: new ObjectId(id),
+        });
+        if (!trainer) {
+          return res.status(404).send({ error: "Trainer not found" });
+        }
+
+        const email = trainer.email;
+
+        // Step 2: Delete from trainerCollection
+        const deleteResult = await trainerCollection.deleteOne({
+          _id: new ObjectId(id),
+        });
+
+        // Step 3: Update user role in usersCollection
+        const updateResult = await usersCollection.updateOne(
+          { email: email },
+          { $set: { role: "member" } }
+        );
+
+        res.send({
+          message: "Trainer removed and user role set to member.",
+          deleted: deleteResult,
+          updated: updateResult,
+        });
+      } catch (error) {
+        console.error("Error deleting trainer:", error);
+        res.status(500).send({ error: "Failed to delete trainer." });
+      }
+    });
 
     await client.connect();
     await client.db("admin").command({ ping: 1 });
