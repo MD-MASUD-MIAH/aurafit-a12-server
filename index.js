@@ -1,5 +1,5 @@
 require("dotenv").config();
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const express = require("express");
 const admin = require("firebase-admin");
 const app = express();
@@ -34,7 +34,7 @@ const verifyToken = async (req, res, next) => {
 
   const token = authHeaders.split(" ")[1];
 
-  console.log(token);
+  
 
   try {
     const decoded = await admin.auth().verifyIdToken(token);
@@ -62,7 +62,7 @@ async function run() {
     const db = client.db("fitnessData");
     const usersCollection = db.collection("user");
     const subscribersCollection = db.collection("subscribers");
-    const TrainerCollection = db.collection("trainer");
+    const trainerCollection = db.collection("trainer");
     //  get data
     app.get("/user", async (req, res) => {
       const result = await usersCollection.find().toArray();
@@ -77,6 +77,28 @@ async function run() {
 
       res.send(result);
     });
+
+    app.get("/trainer", async (req, res) => {
+      const result = await trainerCollection
+        .find()
+        .sort({ createdAt: -1 })
+        .toArray();
+
+      res.send(result);
+    });
+    app.get("/trainer/:id", async (req, res) => {
+
+      const id = req.params.id 
+
+      const query   = {_id:new ObjectId(id)}
+      const result = await trainerCollection
+        .findOne(query)
+       
+
+      res.send(result);
+    });
+
+
 
     // post data
     app.post("/user", async (req, res) => {
@@ -111,9 +133,9 @@ async function run() {
 
       res.send(result);
     });
-    app.post("/trainer", async (req, res) => {
+    app.post("/trainer",verifyToken, async (req, res) => {
       const trainerData = req.body;
-      const result = await TrainerCollection.insertOne(trainerData);
+      const result = await trainerCollection.insertOne(trainerData);
 
       res.send(result);
     });
