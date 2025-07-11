@@ -62,38 +62,34 @@ async function run() {
     const subscribersCollection = db.collection("subscribers");
     const trainerCollection = db.collection("trainer");
     const classCollection = db.collection("class");
+    const BookingCollection = db.collection("Booking");
     
 
 
   app.post("/create-payment-intent", async (req, res) => {
-  const { price } = req.body; // amount in cents
+  const  formData = req.body;
 
-   // stripe...
-      const { client_secret } = await stripe.paymentIntents.create({
-        amount: price *100,
-        currency: 'usd',
-        automatic_payment_methods: {
-          enabled: true,
-        },
-      })
+  const amount = Number(formData.amount);
+  if (isNaN(amount)) {
+    return res.status(400).send({ error: "Invalid amount provided." });
+  }
 
-  console.log(price);
-  res.send({ clientSecret: client_secret })
-  
-  // try {
-  //   const paymentIntent = await stripe.paymentIntents.create({
-  //     amount,
-  //     currency: "usd",
-  //     payment_method_types: ["card"],
-  //   });
+  try {
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: amount * 100,
+      currency: 'usd',
+      automatic_payment_methods: {
+        enabled: true,
+      },
+    });
 
-  //   res.send({
-  //     clientSecret: paymentIntent.client_secret,
-  //   });
-  // } catch (error) {
-  //   res.status(500).send({ error: error.message });
-  // }
+    res.send({ clientSecret: paymentIntent.client_secret });
+  } catch (err) {
+    console.error("Stripe error:", err);
+    res.status(500).send({ error: err.message });
+  }
 });
+
 
 
 
@@ -223,6 +219,18 @@ app.get("/my-trainer-application", async (req, res) => {
 
    
     // post data
+
+    app.post("/bookings", async (req, res) => {
+    const booking = req.body;
+
+  try {
+    const result = await BookingCollection.insertOne(booking);
+    res.send({ insertedId: result.insertedId });
+  } catch (error) {
+    console.error("Booking insert error:", error);
+    res.status(500).send({ error: "Failed to save booking" });
+  }
+});
     app.post("/user", async (req, res) => {
       const userData = req.body;
       userData.role = "member";
