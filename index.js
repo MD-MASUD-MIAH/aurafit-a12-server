@@ -104,6 +104,33 @@ async function run() {
 
 
 
+    app.get("/trainer-classes/:trainerId", async (req, res) => {
+  const trainerId = req.params.trainerId;
+  
+  
+  try {
+    // Step 1: Find the trainer
+    const trainer = await trainerCollection.findOne({ _id: new ObjectId(trainerId) });
+
+    if (!trainer) {
+      return res.status(404).json({ message: "Trainer not found" });
+    }
+
+    const matchedSkills = trainer.skills; // Example: ['Yoga', 'Cardio']
+
+    // Step 2: Find all classes where skillName matches any of the trainer's skills
+    const classes = await classCollection
+      .find({ skillName: { $in: matchedSkills } })
+      .project({ className: 1, _id: 0 })
+      .toArray();
+
+    res.send(classes);
+  } catch (error) {
+    console.error("Error fetching classes for trainer:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
     app.get("/user", async (req, res) => {
       const result = await usersCollection.find().toArray();
       res.send(result);
@@ -194,6 +221,7 @@ app.get("/my-trainer-application", async (req, res) => {
 
 
 
+   
     // post data
     app.post("/user", async (req, res) => {
       const userData = req.body;
@@ -235,7 +263,15 @@ app.get("/my-trainer-application", async (req, res) => {
       res.send(result);
     });
 
-    // -------------------------------------// patch method all _________________________
+
+    app.post('/addClass',async(req,res)=>{
+
+      const ClassData = req.body
+      const result = await classCollection.insertOne(ClassData) 
+
+      res.send(result)
+    })
+    // -------------------------------------// patch method all _ ________________________
 
    
 
@@ -341,10 +377,6 @@ app.get("/my-trainer-application", async (req, res) => {
         res.status(500).send({ error: "Failed to delete trainer." });
       }
     });
-
-   
-
-
 
 
 
