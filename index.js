@@ -4,7 +4,7 @@ const express = require("express");
 const admin = require("firebase-admin");
 const app = express();
 const cors = require("cors");
-
+const stripe = require('stripe')(process.env.STRIPE_SK_KEY)
 const port = process.env.PORT || 4000;
 
 //   meddleWare
@@ -62,7 +62,48 @@ async function run() {
     const subscribersCollection = db.collection("subscribers");
     const trainerCollection = db.collection("trainer");
     const classCollection = db.collection("class");
+    
+
+
+  app.post("/create-payment-intent", async (req, res) => {
+  const { price } = req.body; // amount in cents
+
+   // stripe...
+      const { client_secret } = await stripe.paymentIntents.create({
+        amount: price *100,
+        currency: 'usd',
+        automatic_payment_methods: {
+          enabled: true,
+        },
+      })
+
+  console.log(price);
+  res.send({ clientSecret: client_secret })
+  
+  // try {
+  //   const paymentIntent = await stripe.paymentIntents.create({
+  //     amount,
+  //     currency: "usd",
+  //     payment_method_types: ["card"],
+  //   });
+
+  //   res.send({
+  //     clientSecret: paymentIntent.client_secret,
+  //   });
+  // } catch (error) {
+  //   res.status(500).send({ error: error.message });
+  // }
+});
+
+
+
+
+
+
     //  get data
+
+
+
     app.get("/user", async (req, res) => {
       const result = await usersCollection.find().toArray();
       res.send(result);
