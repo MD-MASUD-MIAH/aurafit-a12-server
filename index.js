@@ -86,7 +86,7 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/pendin  g-trainer", async (req, res) => {
+    app.get("/pending-trainer", async (req, res) => {
       try {
         const result = await trainerCollection
           .find({ status: "pending" })
@@ -124,6 +124,34 @@ async function run() {
 
       res.send(result);
     });
+
+
+
+app.get("/my-trainer-application", async (req, res) => {
+ 
+  try {
+    const result = await trainerCollection.find({
+    
+      status: { $in: ["pending", "rejected"] } // exclude approved
+    }).toArray();
+
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({ error: "Failed to load application status" });
+  }
+});
+
+
+
+
+
+
+
+
+
+
+
+
 
     // post data
     app.post("/user", async (req, res) => {
@@ -166,6 +194,11 @@ async function run() {
       res.send(result);
     });
 
+    // -------------------------------------// patch method all _________________________
+
+   
+
+
     app.patch("/trainer/approve/:id", async (req, res) => {
       const id = req.params.id;
 
@@ -205,25 +238,31 @@ async function run() {
       }
     });
 
-    // -------------------------------------// patch method all _________________________
 
-    app.patch("/trainer/approve/:id", async (req, res) => {
-      const id = req.params.id;
-      try {
-        const result = await trainerCollection.updateOne(
-          { _id: new ObjectId(id) },
-          {
-            $set: {
-              status: "trainer",
-            },
-          }
-        );
 
-        res.send(result);
-      } catch (error) {
-        res.status(500).send({ error: "Failed to approve trainer." });
+
+
+     app.patch("/trainer/reject/:id", async (req, res) => {
+  const id = req.params.id;
+  const { feedback } = req.body;
+
+  try {
+    const result = await trainerCollection.updateOne(
+      { _id: new ObjectId(id) },
+      {
+        $set: {
+          status: "rejected",
+          feedback: feedback,
+        },
       }
-    });
+    );
+
+    res.send({ message: "Trainer rejected successfully", result });
+  } catch (error) {
+    console.error("Error rejecting trainer:", error);
+    res.status(500).send({ error: "Failed to reject trainer." });
+  }
+});
 
     // ------------------------------------- Delete method all ------------------
 
@@ -261,6 +300,12 @@ async function run() {
         res.status(500).send({ error: "Failed to delete trainer." });
       }
     });
+
+   
+
+
+
+
 
     await client.connect();
     await client.db("admin").command({ ping: 1 });
