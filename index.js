@@ -214,12 +214,64 @@ async function run() {
     });
 
     app.get("/class", async (req, res) => {
-      const result = await classCollection
-        .find()
-        .sort({ createdAt: -1 })
-        .toArray();
+      try {
+        const result = await classCollection
+          .aggregate([
+            {
+              $lookup: {
+                from: "trainer", // ✅ replace with actual collection name if needed
+                let: { skill: { $toLower: "$skillName" } },
+                pipeline: [
+                  {
+                    $addFields: {
+                      lowerSkills: {
+                        $map: {
+                          input: "$skills",
+                          as: "s",
+                          in: { $toLower: "$$s" },
+                        },
+                      },
+                    },
+                  },
+                  {
+                    $match: {
+                      $expr: {
+                        $and: [
+                          { $in: ["$$skill", "$lowerSkills"] }, // ✅ skill match
+                          { $eq: ["$status", "trainer"] }, // ✅ only approved trainers
+                        ],
+                      },
+                    },
+                  },
+                  {
+                    $project: {
+                      fullName: 1,
+                      photo: 1,
+                      email: 1,
+                      _id: 1,
+                    },
+                  },
+                ],
+                as: "trainers",
+              },
+            },
+            {
+              $project: {
+                className: 1,
+                skillName: 1,
+                image: 1,
+                details: 1,
+                trainers: 1,
+              },
+            },
+          ])
+          .toArray();
 
-      res.send(result);
+        res.send(result);
+      } catch (error) {
+        console.error("Error fetching classes with trainers:", error);
+        res.status(500).json({ message: "Internal Server Error" });
+      }
     });
 
     app.get("/trainer/:id", async (req, res) => {
@@ -254,18 +306,39 @@ async function run() {
       }
     });
 
-
     app.get("/class-names", async (req, res) => {
+      try {
+        const classNames = await classCollection
+          .find({}, { projection: { name: 1, _id: 0 } })
+          .toArray();
+
+        res.send(classNames);
+      } catch (error) {
+        res.status(500).send({ message: "Failed to fetch class names" });
+      }
+    });
+
+
+app.get("/trainer/bookings/:email", async (req, res) => {
+  const trainerEmail = req?.params.email; // frontend থেকে পাঠানো email
+
+  console.log(trainerEmail);
+  
+
   try {
-    const classNames = await classCollection
-      .find({}, { projection: { name: 1, _id: 0 } }) // শুধু name ফিল্ড, _id বাদ
+    const result = await BookingCollection
+      .find({ 
+          trainerEmail : trainerEmail })
       .toArray();
 
-    res.send(classNames); // Output will be: [{ name: "Yoga" }, { name: "Cardio" }, ...]
+    res.send(result);
   } catch (error) {
-    res.status(500).send({ message: "Failed to fetch class names" });
+    console.error("Error fetching bookings for trainer:", error);
+    res.status(500).json({ message: "Internal Server Error" });
   }
 });
+
+
 
 
     // post data
@@ -328,12 +401,11 @@ async function run() {
       res.send(result);
     });
 
-    app.post('/review-post',async (req,res)=>{
-      
-      const review = req.body 
-      const result = await reviewingCollection.insertOne(review) 
-      res.send(result)
-    })
+    app.post("/review-post", async (req, res) => {
+      const review = req.body;
+      const result = await reviewingCollection.insertOne(review);
+      res.send(result);
+    });
     // -------------------------------------// patch method all _ ________________________
 
     app.patch("/trainer/approve/:id", async (req, res) => {
@@ -394,6 +466,30 @@ async function run() {
       } catch (error) {
         console.error("Error rejecting trainer:", error);
         res.status(500).send({ error: "Failed to reject trainer." });
+      }
+    });
+
+    app.patch("/trainer/:email", async (req, res) => {
+      const { email } = req.params;
+      const { availableDays, timeSlots, classes, skills } = req.body;
+
+      try {
+        const result = await trainerCollection.updateOne(
+          { email },
+          {
+            $set: {
+              availableDays,
+              timeSlots,
+
+              skills, // <== Add this line
+            },
+          }
+        );
+
+        res.send(result);
+      } catch (error) {
+        console.error("Update error:", error);
+        res.status(500).send({ message: "Failed to update trainer data" });
       }
     });
 
