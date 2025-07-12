@@ -63,6 +63,7 @@ async function run() {
     const trainerCollection = db.collection("trainer");
     const classCollection = db.collection("class");
     const BookingCollection = db.collection("Booking");
+    const reviewingCollection = db.collection("review");
 
     app.post("/create-payment-intent", async (req, res) => {
       const formData = req.body;
@@ -100,19 +101,32 @@ async function run() {
           {
             $match: { memberEmail: userEmail },
           },
-
           {
             $lookup: {
               from: "trainer",
-              localField: "_id",
-              foreignField: "trainerId",
+              let: { trainerId: "$trainerId" },
+              pipeline: [
+                {
+                  $match: {
+                    $expr: { $eq: [{ $toString: "$_id" }, "$$trainerId"] },
+                  },
+                },
+              ],
               as: "trainerDetails",
             },
           },
           {
-            $unwind: "$trainerDetails",
+            $addFields: {
+              trainerId: { $toObjectId: "$trainerId" },
+            },
           },
-        ]).toArray()
+          {
+            $unwind: {
+              path: "$trainerDetails",
+              preserveNullAndEmptyArrays: true,
+            },
+          },
+        ]).toArray();
 
         res.send(result);
       } catch (error) {
@@ -120,10 +134,6 @@ async function run() {
         res.status(500).send({ message: "Failed to fetch booking data" });
       }
     });
-
-
-
-
 
     app.get("/slots/:email", async (req, res) => {
       const email = req.params.email;
@@ -303,6 +313,13 @@ async function run() {
 
       res.send(result);
     });
+
+    app.post('/review-post',async (req,res)=>{
+      
+      const review = req.body 
+      const result = await reviewingCollection.insertOne(review) 
+      res.send(result)
+    })
     // -------------------------------------// patch method all _ ________________________
 
     app.patch("/trainer/approve/:id", async (req, res) => {
