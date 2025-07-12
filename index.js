@@ -4,7 +4,7 @@ const express = require("express");
 const admin = require("firebase-admin");
 const app = express();
 const cors = require("cors");
-const stripe = require('stripe')(process.env.STRIPE_SK_KEY)
+const stripe = require("stripe")(process.env.STRIPE_SK_KEY);
 const port = process.env.PORT || 4000;
 
 //   meddleWare
@@ -63,69 +63,109 @@ async function run() {
     const trainerCollection = db.collection("trainer");
     const classCollection = db.collection("class");
     const BookingCollection = db.collection("Booking");
-    
 
+    app.post("/create-payment-intent", async (req, res) => {
+      const formData = req.body;
 
-  app.post("/create-payment-intent", async (req, res) => {
-  const  formData = req.body;
+      const amount = Number(formData.amount);
+      if (isNaN(amount)) {
+        return res.status(400).send({ error: "Invalid amount provided." });
+      }
 
-  const amount = Number(formData.amount);
-  if (isNaN(amount)) {
-    return res.status(400).send({ error: "Invalid amount provided." });
-  }
+      try {
+        const paymentIntent = await stripe.paymentIntents.create({
+          amount: amount * 100,
+          currency: "usd",
+          automatic_payment_methods: {
+            enabled: true,
+          },
+        });
 
-  try {
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: amount * 100,
-      currency: 'usd',
-      automatic_payment_methods: {
-        enabled: true,
-      },
+        res.send({ clientSecret: paymentIntent.client_secret });
+      } catch (err) {
+        console.error("Stripe error:", err);
+        res.status(500).send({ error: err.message });
+      }
     });
-
-    res.send({ clientSecret: paymentIntent.client_secret });
-  } catch (err) {
-    console.error("Stripe error:", err);
-    res.status(500).send({ error: err.message });
-  }
-});
-
-
-
-
-
-
 
     //  get data
 
+    app.get("/booked/:email", async (req, res) => {
+      const userEmail = req.params.email;
 
+      console.log(userEmail);
+
+      try {
+        const result = await BookingCollection.aggregate([
+          {
+            $match: { memberEmail: userEmail },
+          },
+
+          {
+            $lookup: {
+              from: "trainer",
+              localField: "_id",
+              foreignField: "trainerId",
+              as: "trainerDetails",
+            },
+          },
+          {
+            $unwind: "$trainerDetails",
+          },
+        ]).toArray()
+
+        res.send(result);
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: "Failed to fetch booking data" });
+      }
+    });
+
+
+
+
+
+    app.get("/slots/:email", async (req, res) => {
+      const email = req.params.email;
+
+      try {
+        const trainer = await trainerCollection.findOne({ email: email });
+
+        if (!trainer) {
+          return res.status(404).send({ message: "Trainer not found" });
+        }
+
+        res.send(trainer);
+      } catch (error) {
+        res.status(500).send({ message: "Failed to fetch trainer info" });
+      }
+    });
 
     app.get("/trainer-classes/:trainerId", async (req, res) => {
-  const trainerId = req.params.trainerId;
-  
-  
-  try {
-    // Step 1: Find the trainer
-    const trainer = await trainerCollection.findOne({ _id: new ObjectId(trainerId) });
+      const trainerId = req.params.trainerId;
 
-    if (!trainer) {
-      return res.status(404).json({ message: "Trainer not found" });
-    }
+      try {
+        const trainer = await trainerCollection.findOne({
+          _id: new ObjectId(trainerId),
+        });
 
-    const matchedSkills = trainer.skills; // Example: ['Yoga', 'Cardio']
+        if (!trainer) {
+          return res.status(404).json({ message: "Trainer not found" });
+        }
 
-    // Step 2: Find all classes where skillName matches any of the trainer's skills
-    const classes = await classCollection
-      .find({ skillName: { $in: matchedSkills } })
-      .project({ className: 1, _id: 0 })
-      .toArray();
+        const matchedSkills = trainer.skills;
 
-    res.send(classes);
-  } catch (error) {
-    console.error("Error fetching classes for trainer:", error);
-    res.status(500).json({ message: "Internal server error" });
-  }
-});
+        const classes = await classCollection
+          .find({ skillName: { $in: matchedSkills } })
+          .project({ className: 1, _id: 0 })
+          .toArray();
+
+        res.send(classes);
+      } catch (error) {
+        console.error("Error fetching classes for trainer:", error);
+        res.status(500).json({ message: "Internal server error" });
+      }
+    });
 
     app.get("/user", async (req, res) => {
       const result = await usersCollection.find().toArray();
@@ -180,6 +220,7 @@ async function run() {
 
       res.send(result);
     });
+
     app.get("/pending/:id", async (req, res) => {
       const id = req.params.id;
 
@@ -189,48 +230,33 @@ async function run() {
       res.send(result);
     });
 
+    app.get("/my-trainer-application", async (req, res) => {
+      try {
+        const result = await trainerCollection
+          .find({
+            status: { $in: ["pending", "rejected"] }, // exclude approved
+          })
+          .toArray();
 
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ error: "Failed to load application status" });
+      }
+    });
 
-app.get("/my-trainer-application", async (req, res) => {
- 
-  try {
-    const result = await trainerCollection.find({
-    
-      status: { $in: ["pending", "rejected"] } // exclude approved
-    }).toArray();
-
-    res.send(result);
-  } catch (error) {
-    res.status(500).send({ error: "Failed to load application status" });
-  }
-});
-
-
-
-
-
-
-
-
-
-
-
-
-
-   
     // post data
 
     app.post("/bookings", async (req, res) => {
-    const booking = req.body;
+      const booking = req.body;
 
-  try {
-    const result = await BookingCollection.insertOne(booking);
-    res.send({ insertedId: result.insertedId });
-  } catch (error) {
-    console.error("Booking insert error:", error);
-    res.status(500).send({ error: "Failed to save booking" });
-  }
-});
+      try {
+        const result = await BookingCollection.insertOne(booking);
+        res.send({ insertedId: result.insertedId });
+      } catch (error) {
+        console.error("Booking insert error:", error);
+        res.status(500).send({ error: "Failed to save booking" });
+      }
+    });
     app.post("/user", async (req, res) => {
       const userData = req.body;
       userData.role = "member";
@@ -271,18 +297,13 @@ app.get("/my-trainer-application", async (req, res) => {
       res.send(result);
     });
 
+    app.post("/addClass", async (req, res) => {
+      const ClassData = req.body;
+      const result = await classCollection.insertOne(ClassData);
 
-    app.post('/addClass',async(req,res)=>{
-
-      const ClassData = req.body
-      const result = await classCollection.insertOne(ClassData) 
-
-      res.send(result)
-    })
+      res.send(result);
+    });
     // -------------------------------------// patch method all _ ________________________
-
-   
-
 
     app.patch("/trainer/approve/:id", async (req, res) => {
       const id = req.params.id;
@@ -323,31 +344,27 @@ app.get("/my-trainer-application", async (req, res) => {
       }
     });
 
+    app.patch("/trainer/reject/:id", async (req, res) => {
+      const id = req.params.id;
+      const { feedback } = req.body;
 
+      try {
+        const result = await trainerCollection.updateOne(
+          { _id: new ObjectId(id) },
+          {
+            $set: {
+              status: "rejected",
+              feedback: feedback,
+            },
+          }
+        );
 
-
-
-     app.patch("/trainer/reject/:id", async (req, res) => {
-  const id = req.params.id;
-  const { feedback } = req.body;
-
-  try {
-    const result = await trainerCollection.updateOne(
-      { _id: new ObjectId(id) },
-      {
-        $set: {
-          status: "rejected",
-          feedback: feedback,
-        },
+        res.send({ message: "Trainer rejected successfully", result });
+      } catch (error) {
+        console.error("Error rejecting trainer:", error);
+        res.status(500).send({ error: "Failed to reject trainer." });
       }
-    );
-
-    res.send({ message: "Trainer rejected successfully", result });
-  } catch (error) {
-    console.error("Error rejecting trainer:", error);
-    res.status(500).send({ error: "Failed to reject trainer." });
-  }
-});
+    });
 
     // ------------------------------------- Delete method all ------------------
 
@@ -385,8 +402,6 @@ app.get("/my-trainer-application", async (req, res) => {
         res.status(500).send({ error: "Failed to delete trainer." });
       }
     });
-
-
 
     await client.connect();
     await client.db("admin").command({ ping: 1 });
