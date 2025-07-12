@@ -44,7 +44,7 @@ const verifyToken = async (req, res, next) => {
 };
 
 app.get("/", async (req, res) => {
-  res.send("welcome to my one more now project Fitness Tracker");
+  res.send("welcome to my one more new project Fitness Tracker");
 });
 
 const client = new MongoClient(process.env.MONGODB_URL, {
@@ -253,6 +253,20 @@ async function run() {
         res.status(500).send({ error: "Failed to load application status" });
       }
     });
+
+
+    app.get("/class-names", async (req, res) => {
+  try {
+    const classNames = await classCollection
+      .find({}, { projection: { name: 1, _id: 0 } }) // শুধু name ফিল্ড, _id বাদ
+      .toArray();
+
+    res.send(classNames); // Output will be: [{ name: "Yoga" }, { name: "Cardio" }, ...]
+  } catch (error) {
+    res.status(500).send({ message: "Failed to fetch class names" });
+  }
+});
+
 
     // post data
 
