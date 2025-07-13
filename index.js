@@ -65,6 +65,7 @@ async function run() {
     const classCollection = db.collection("class");
     const BookingCollection = db.collection("Booking");
     const reviewingCollection = db.collection("review");
+    const forumCollection = db.collection("forum");
 
     app.post("/create-payment-intent", async (req, res) => {
       const formData = req.body;
@@ -217,88 +218,84 @@ async function run() {
       }
     });
 
-  app.get("/class", async (req, res) => {
-  try {
-    const search = req.query.search || "";
+    app.get("/class", async (req, res) => {
+      try {
+        const search = req.query.search || "";
 
-    const pipeline = [];
+        const pipeline = [];
 
-    // ✅ কেবল search দিলে $match চালাও
-    if (search) {
-      pipeline.push({
-        $match: {
-          skillName: { $regex: search, $options: "i" },
-        },
-      });
-    }
+        if (search) {
+          pipeline.push({
+            $match: {
+              skillName: { $regex: search, $options: "i" },
+            },
+          });
+        }
 
-    // ✅ আগের aggregate স্টেপগুলো
-    pipeline.push(
-      {
-        $lookup: {
-          from: "trainer",
-          let: { skill: { $toLower: "$skillName" } },
-          pipeline: [
-            {
-              $addFields: {
-                lowerSkills: {
-                  $map: {
-                    input: "$skills",
-                    as: "s",
-                    in: { $toLower: "$$s" },
+        // ✅ আগের aggregate স্টেপগুলো
+        pipeline.push(
+          {
+            $lookup: {
+              from: "trainer",
+              let: { skill: { $toLower: "$skillName" } },
+              pipeline: [
+                {
+                  $addFields: {
+                    lowerSkills: {
+                      $map: {
+                        input: "$skills",
+                        as: "s",
+                        in: { $toLower: "$$s" },
+                      },
+                    },
                   },
                 },
-              },
-            },
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $in: ["$$skill", "$lowerSkills"] },
-                    { $eq: ["$status", "trainer"] },
-                  ],
+                {
+                  $match: {
+                    $expr: {
+                      $and: [
+                        { $in: ["$$skill", "$lowerSkills"] },
+                        { $eq: ["$status", "trainer"] },
+                      ],
+                    },
+                  },
                 },
-              },
+                {
+                  $project: {
+                    fullName: 1,
+                    photo: 1,
+                    email: 1,
+                    _id: 1,
+                  },
+                },
+              ],
+              as: "trainers",
             },
-            {
-              $project: {
-                fullName: 1,
-                photo: 1,
-                email: 1,
-                _id: 1,
-              },
+          },
+          {
+            $addFields: {
+              trainers: { $slice: ["$trainers", 5] },
             },
-          ],
-          as: "trainers",
-        },
-      },
-      {
-        $addFields: {
-          trainers: { $slice: ["$trainers", 5] },
-        },
-      },
-      {
-        $project: {
-          className: 1,
-          skillName: 1,
-          image: 1,
-          details: 1,
-          trainers: 1,
-        },
+          },
+          {
+            $project: {
+              className: 1,
+              skillName: 1,
+              image: 1,
+              details: 1,
+              trainers: 1,
+            },
+          }
+        );
+
+        const result = await classCollection.aggregate(pipeline).toArray();
+
+        res.send(result);
+      } catch (error) {
+        console.error("Error fetching classes with trainers:", error);
+        res.status(500).json({ message: "Internal Server Error" });
       }
-    );
-
-    const result = await classCollection.aggregate(pipeline).toArray();
-
-    res.send(result);
-  } catch (error) {
-    console.error("Error fetching classes with trainers:", error);
-    res.status(500).json({ message: "Internal Server Error" });
-  }
-});
-
-
-
+    });
 
     app.get("/trainer/:id", async (req, res) => {
       const id = req.params.id;
@@ -360,6 +357,33 @@ async function run() {
         res.status(500).json({ message: "Internal Server Error" });
       }
     });
+
+    app.get("/trainers-and-admins/:email", async (req, res) => {
+      try {
+        const email = req.params.email;
+
+        const user = await usersCollection.findOne({
+          email,
+          role: { $in: ["trainer", "admin"] },
+        });
+
+        if (!user) {
+          return res
+            .status(404)
+            .json({ message: "User not found or not authorized" });
+        }
+
+        res.status(200).json(user);
+      } catch (error) {
+        console.error("Error fetching user:", error);
+        res.status(500).json({ message: "Internal Server Error" });
+      }
+    });
+    app.get('/forums',async(req,res)=>{
+
+
+      const result =  await forumCollection.g
+    })
 
     // post data
 
@@ -426,6 +450,18 @@ async function run() {
       const result = await reviewingCollection.insertOne(review);
       res.send(result);
     });
+
+    app.post('/forums',async  (req,res)=>{
+
+      const forumsPost= req.body 
+      console.log(forumsPost);
+      const result =  await forumCollection.insertOne(forumsPost)
+      res.send(result)
+
+    }
+           
+
+    )
     // -------------------------------------// patch method all _ ________________________
 
     app.patch("/trainer/approve/:id", async (req, res) => {
