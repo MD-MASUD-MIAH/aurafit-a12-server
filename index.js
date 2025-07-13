@@ -156,31 +156,33 @@ async function run() {
       }
     });
 
-    app.get("/trainer-classes/:trainerId", async (req, res) => {
-      const trainerId = req.params.trainerId;
+  app.get("/trainer-classes/:trainerId", async (req, res) => {
+  const trainerId = req.params.trainerId;
 
-      try {
-        const trainer = await trainerCollection.findOne({
-          _id: new ObjectId(trainerId),
-        });
-
-        if (!trainer) {
-          return res.status(404).json({ message: "Trainer not found" });
-        }
-
-        const matchedSkills = trainer.skills;
-
-        const classes = await classCollection
-          .find({ skillName: { $in: matchedSkills } })
-          .project({ className: 1, _id: 0 })
-          .toArray();
-
-        res.send(classes);
-      } catch (error) {
-        console.error("Error fetching classes for trainer:", error);
-        res.status(500).json({ message: "Internal server error" });
-      }
+  try {
+    const trainer = await trainerCollection.findOne({
+      _id: new ObjectId(trainerId),
     });
+
+    if (!trainer) {
+      return res.status(404).json({ message: "Trainer not found" });
+    }
+
+    const matchedSkills = trainer.skills;
+
+    const classes = await classCollection
+      .find({ skillName: { $in: matchedSkills } })
+      .project({ skillName: 1 }) // 🔄 Only skillName and _id (default)
+      .toArray();
+
+    res.send(classes);
+  } catch (error) {
+    console.error("Error fetching classes for trainer:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+
 
     app.get("/user", async (req, res) => {
       const result = await usersCollection.find().toArray();
@@ -401,17 +403,30 @@ async function run() {
     // post data
 
 
-    app.post("/bookings", async (req, res) => {
-      const booking = req.body;
+   app.post("/bookings", async (req, res) => {
+  const booking = req.body;
+  const classId = booking.classId;
 
-      try {
-        const result = await BookingCollection.insertOne(booking);
-        res.send({ insertedId: result.insertedId });
-      } catch (error) {
-        console.error("Booking insert error:", error);
-        res.status(500).send({ error: "Failed to save booking" });
-      }
+  try {
+    // 1️⃣ Save the booking in BookingCollection
+    const result = await BookingCollection.insertOne(booking);
+
+    // 2️⃣ Update class bookingCount
+    const updateResult = await classCollection.updateOne(
+      { _id: new ObjectId(classId) },
+      { $inc: { bookingCount: 1 } }
+    );
+
+    res.send({
+      insertedId: result.insertedId,
+      message: "Booking saved and class booking count updated",
     });
+  } catch (error) {
+    console.error("Booking insert error:", error);
+    res.status(500).send({ error: "❌ Failed to save booking" });
+  }
+});
+
     app.post("/user", async (req, res) => {
       const userData = req.body;
       userData.role = "member";
