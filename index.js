@@ -36,10 +36,11 @@ const verifyToken = async (req, res, next) => {
 
   try {
     const decoded = await admin.auth().verifyIdToken(token);
-    req.decoded = decoded;
+    req.user = decoded;
   } catch {
     return res.status(401).send({ message: "unauthorized access" });
   }
+
   next();
 };
 
@@ -139,7 +140,10 @@ async function run() {
       const email = req.params.email;
 
       try {
-        const trainer = await trainerCollection.findOne({ email: email });
+        const trainer = await trainerCollection.findOne({
+          email: email,
+          status: "trainer",
+        });
 
         if (!trainer) {
           return res.status(404).send({ message: "Trainer not found" });
@@ -213,66 +217,88 @@ async function run() {
       }
     });
 
-    app.get("/class", async (req, res) => {
-      try {
-        const result = await classCollection
-          .aggregate([
+  app.get("/class", async (req, res) => {
+  try {
+    const search = req.query.search || "";
+
+    const pipeline = [];
+
+    // ✅ কেবল search দিলে $match চালাও
+    if (search) {
+      pipeline.push({
+        $match: {
+          skillName: { $regex: search, $options: "i" },
+        },
+      });
+    }
+
+    // ✅ আগের aggregate স্টেপগুলো
+    pipeline.push(
+      {
+        $lookup: {
+          from: "trainer",
+          let: { skill: { $toLower: "$skillName" } },
+          pipeline: [
             {
-              $lookup: {
-                from: "trainer", // ✅ replace with actual collection name if needed
-                let: { skill: { $toLower: "$skillName" } },
-                pipeline: [
-                  {
-                    $addFields: {
-                      lowerSkills: {
-                        $map: {
-                          input: "$skills",
-                          as: "s",
-                          in: { $toLower: "$$s" },
-                        },
-                      },
-                    },
+              $addFields: {
+                lowerSkills: {
+                  $map: {
+                    input: "$skills",
+                    as: "s",
+                    in: { $toLower: "$$s" },
                   },
-                  {
-                    $match: {
-                      $expr: {
-                        $and: [
-                          { $in: ["$$skill", "$lowerSkills"] }, // ✅ skill match
-                          { $eq: ["$status", "trainer"] }, // ✅ only approved trainers
-                        ],
-                      },
-                    },
-                  },
-                  {
-                    $project: {
-                      fullName: 1,
-                      photo: 1,
-                      email: 1,
-                      _id: 1,
-                    },
-                  },
-                ],
-                as: "trainers",
+                },
+              },
+            },
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $in: ["$$skill", "$lowerSkills"] },
+                    { $eq: ["$status", "trainer"] },
+                  ],
+                },
               },
             },
             {
               $project: {
-                className: 1,
-                skillName: 1,
-                image: 1,
-                details: 1,
-                trainers: 1,
+                fullName: 1,
+                photo: 1,
+                email: 1,
+                _id: 1,
               },
             },
-          ])
-          .toArray();
-
-        res.send(result);
-      } catch (error) {
-        console.error("Error fetching classes with trainers:", error);
-        res.status(500).json({ message: "Internal Server Error" });
+          ],
+          as: "trainers",
+        },
+      },
+      {
+        $addFields: {
+          trainers: { $slice: ["$trainers", 5] },
+        },
+      },
+      {
+        $project: {
+          className: 1,
+          skillName: 1,
+          image: 1,
+          details: 1,
+          trainers: 1,
+        },
       }
-    });
+    );
+
+    const result = await classCollection.aggregate(pipeline).toArray();
+
+    res.send(result);
+  } catch (error) {
+    console.error("Error fetching classes with trainers:", error);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+});
+
+
+
 
     app.get("/trainer/:id", async (req, res) => {
       const id = req.params.id;
@@ -318,28 +344,22 @@ async function run() {
       }
     });
 
+    app.get("/trainer/bookings/:email", async (req, res) => {
+      const trainerEmail = req?.params.email;
 
-app.get("/trainer/bookings/:email", async (req, res) => {
-  const trainerEmail = req?.params.email; // frontend থেকে পাঠানো email
+      console.log(trainerEmail);
 
-  console.log(trainerEmail);
-  
+      try {
+        const result = await BookingCollection.find({
+          trainerId: trainerEmail,
+        }).toArray();
 
-  try {
-    const result = await BookingCollection
-      .find({ 
-          trainerEmail : trainerEmail })
-      .toArray();
-
-    res.send(result);
-  } catch (error) {
-    console.error("Error fetching bookings for trainer:", error);
-    res.status(500).json({ message: "Internal Server Error" });
-  }
-});
-
-
-
+        res.send(result);
+      } catch (error) {
+        console.error("Error fetching bookings for trainer:", error);
+        res.status(500).json({ message: "Internal Server Error" });
+      }
+    });
 
     // post data
 
@@ -527,6 +547,45 @@ app.get("/trainer/bookings/:email", async (req, res) => {
       } catch (error) {
         console.error("Error deleting trainer:", error);
         res.status(500).send({ error: "Failed to delete trainer." });
+      }
+    });
+
+    app.delete("/slots/:email", verifyToken, async (req, res) => {
+      try {
+        const email = req.params.email;
+        const slot = req.query.slot;
+
+        console.log("server side", email, req.user.email, slot);
+
+        // Check if the requesting user is authorized
+        if (req?.user?.email !== email) {
+          return res
+            .status(403)
+            .json({ message: "Unauthorized to delete slots" });
+        }
+
+        // Find the trainer
+        const trainer = await trainerCollection.findOne({
+          email,
+          status: "trainer",
+        });
+
+        if (!trainer) {
+          return res.status(404).json({ message: "Trainer not found" });
+        }
+
+        // Remove the slot from the array
+        const updatedSlots = trainer.timeSlots.filter((s) => s !== slot);
+
+        await trainerCollection.updateOne(
+          { email },
+          { $set: { timeSlots: updatedSlots } }
+        );
+
+        res.status(200).json({ message: "Slot deleted successfully" });
+      } catch (error) {
+        console.error("Error deleting slot:", error);
+        res.status(500).json({ message: "Server error", error: error.message });
       }
     });
 
