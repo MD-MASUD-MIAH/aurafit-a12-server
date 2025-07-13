@@ -387,6 +387,17 @@ async function run() {
       res.send(result)
     })
 
+     app.get('/forumSingle/:id',async(req,res)=>{
+
+      
+      
+
+        const id = req.params.id
+        const query = {_id:new ObjectId(id)}
+        const result = await forumCollection.findOne(query)
+
+        res.send(result)
+     })
     // post data
 
 
