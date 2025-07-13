@@ -382,10 +382,13 @@ async function run() {
     app.get('/forums',async(req,res)=>{
 
 
-      const result =  await forumCollection.g
+      const result =  await forumCollection.find().toArray()
+
+      res.send(result)
     })
 
     // post data
+
 
     app.post("/bookings", async (req, res) => {
       const booking = req.body;
@@ -548,6 +551,96 @@ async function run() {
         res.status(500).send({ message: "Failed to update trainer data" });
       }
     });
+
+
+
+ app.patch("/forums/:id/vote", async (req, res) => {
+  const postId = req.params.id;
+  const { voteType, userEmail } = req.body;
+
+  try {
+    const post = await forumCollection.findOne({ _id: new ObjectId(postId) });
+    if (!post) return res.status(404).send({ message: "Post not found" });
+
+    let upvoteCount = post.upvoteCount || 0;
+    let downvoteCount = post.downvoteCount || 0;
+
+    const existingVote = post.voters?.find(v => v.userEmail === userEmail);
+
+    // ✅ 1. First time voting
+    if (!existingVote) {
+      const updateFields = { voters: [...(post.voters || []), { userEmail, voteType }] };
+      if (voteType === "upvote") upvoteCount += 1;
+      else if (voteType === "downvote") downvoteCount += 1;
+
+      await forumCollection.updateOne(
+        { _id: new ObjectId(postId) },
+        {
+          $set: {
+            upvoteCount,
+            downvoteCount,
+            voters: updateFields.voters
+          }
+        }
+      );
+
+      return res.send({ message: "Vote added" });
+    }
+
+    // 🟡 2. Same vote again → remove vote
+    if (existingVote.voteType === voteType) {
+      const updatedVoters = post.voters.filter(v => v.userEmail !== userEmail);
+      if (voteType === "upvote") upvoteCount -= 1;
+      else if (voteType === "downvote") downvoteCount -= 1;
+
+      await forumCollection.updateOne(
+        { _id: new ObjectId(postId) },
+        {
+          $set: {
+            upvoteCount,
+            downvoteCount,
+            voters: updatedVoters
+          }
+        }
+      );
+
+      return res.send({ message: "Vote removed" });
+    }
+
+    // 🔁 3. Switch vote → remove old, add new
+    const updatedVoters = post.voters.map(v =>
+      v.userEmail === userEmail ? { userEmail, voteType } : v
+    );
+    if (voteType === "upvote") {
+      upvoteCount += 1;
+      downvoteCount -= 1;
+    } else if (voteType === "downvote") {
+      downvoteCount += 1;
+      upvoteCount -= 1;
+    }
+
+    await forumCollection.updateOne(
+      { _id: new ObjectId(postId) },
+      {
+        $set: {
+          upvoteCount,
+          downvoteCount,
+          voters: updatedVoters
+        }
+      }
+    );
+
+    return res.send({ message: "Vote switched" });
+  } catch (err) {
+    res.status(500).send({ message: err.message });
+  }
+});
+
+
+
+
+
+
 
     // ------------------------------------- Delete method all ------------------
 
