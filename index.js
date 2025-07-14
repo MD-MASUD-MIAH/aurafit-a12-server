@@ -36,11 +36,14 @@ const verifyToken = async (req, res, next) => {
 
   try {
     const decoded = await admin.auth().verifyIdToken(token);
+   
     req.user = decoded;
+
+    console.log(req.user);
+    
   } catch {
     return res.status(401).send({ message: "unauthorized access" });
   }
-
   next();
 };
 
@@ -92,6 +95,34 @@ async function run() {
     });
 
     //  get data
+    app.get("/reviews", async (req, res) => {
+      try {
+        const reviews = await reviewingCollection
+          .find()
+          .sort({ _id: -1 }) // latest first
+          .toArray();
+
+        res.send(reviews);
+      } catch (error) {
+        console.error("Error fetching reviews:", error.message);
+        res.status(500).send({ message: "Failed to load reviews" });
+      }
+    });
+
+    app.get("/top-booked-classes", async (req, res) => {
+      try {
+        const topClasses = await classCollection
+          .find()
+          .sort({ bookingCount: -1 })
+          .limit(6)
+          .toArray();
+
+        res.send(topClasses);
+      } catch (error) {
+        console.error("Error fetching top booked classes:", error);
+        res.status(500).send({ message: "Internal Server Error" });
+      }
+    });
 
     app.get("/booked/:email", async (req, res) => {
       const userEmail = req.params.email;
@@ -156,33 +187,31 @@ async function run() {
       }
     });
 
-  app.get("/trainer-classes/:trainerId", async (req, res) => {
-  const trainerId = req.params.trainerId;
+    app.get("/trainer-classes/:trainerId", async (req, res) => {
+      const trainerId = req.params.trainerId;
 
-  try {
-    const trainer = await trainerCollection.findOne({
-      _id: new ObjectId(trainerId),
+      try {
+        const trainer = await trainerCollection.findOne({
+          _id: new ObjectId(trainerId),
+        });
+
+        if (!trainer) {
+          return res.status(404).json({ message: "Trainer not found" });
+        }
+
+        const matchedSkills = trainer.skills;
+
+        const classes = await classCollection
+          .find({ skillName: { $in: matchedSkills } })
+          .project({ skillName: 1 }) // 🔄 Only skillName and _id (default)
+          .toArray();
+
+        res.send(classes);
+      } catch (error) {
+        console.error("Error fetching classes for trainer:", error);
+        res.status(500).json({ message: "Internal server error" });
+      }
     });
-
-    if (!trainer) {
-      return res.status(404).json({ message: "Trainer not found" });
-    }
-
-    const matchedSkills = trainer.skills;
-
-    const classes = await classCollection
-      .find({ skillName: { $in: matchedSkills } })
-      .project({ skillName: 1 }) // 🔄 Only skillName and _id (default)
-      .toArray();
-
-    res.send(classes);
-  } catch (error) {
-    console.error("Error fetching classes for trainer:", error);
-    res.status(500).json({ message: "Internal server error" });
-  }
-});
-
-
 
     app.get("/user", async (req, res) => {
       const result = await usersCollection.find().toArray();
@@ -381,54 +410,71 @@ async function run() {
         res.status(500).json({ message: "Internal Server Error" });
       }
     });
-    app.get('/forums',async(req,res)=>{
+    app.get("/forums", async (req, res) => {
+      const result = await forumCollection.find().toArray();
 
+      res.send(result);
+    });
 
-      const result =  await forumCollection.find().toArray()
+    app.get("/forumSingle/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await forumCollection.findOne(query);
 
-      res.send(result)
-    })
+      res.send(result);
+    });
 
-     app.get('/forumSingle/:id',async(req,res)=>{
+    app.get("/booked", async (req, res) => {
+      try {
+        const result = await BookingCollection.find()
+          .sort({ _id: -1 })
+          .toArray();
 
-      
-      
+        res.send(result);
+      } catch (error) {
+        console.error("Error fetching booked data:", error);
+        res.status(500).send({ error: "Failed to fetch bookings" });
+      }
+    });
 
-        const id = req.params.id
-        const query = {_id:new ObjectId(id)}
-        const result = await forumCollection.findOne(query)
-
-        res.send(result)
-     })
     // post data
 
+    app.post("/bookings", async (req, res) => {
+      const booking = req.body;
+      const classId = booking.classId;
+      const trainerId = booking.trainerId;
 
-   app.post("/bookings", async (req, res) => {
-  const booking = req.body;
-  const classId = booking.classId;
+      try {
+        // 1️⃣ Save booking
+        const result = await BookingCollection.insertOne(booking);
 
-  try {
-    // 1️⃣ Save the booking in BookingCollection
-    const result = await BookingCollection.insertOne(booking);
+        // 2️⃣ Increase booking count in classCollection
+        await classCollection.updateOne(
+          { _id: new ObjectId(classId) },
+          { $inc: { bookingCount: 1 } }
+        );
 
-    // 2️⃣ Update class bookingCount
-    const updateResult = await classCollection.updateOne(
-      { _id: new ObjectId(classId) },
-      { $inc: { bookingCount: 1 } }
-    );
+        // 3️⃣ Increase booking count in trainerCollection
+        await trainerCollection.updateOne(
+          { _id: new ObjectId(trainerId) },
+          { $inc: { bookingCount: 1 } }
+        );
 
-    res.send({
-      insertedId: result.insertedId,
-      message: "Booking saved and class booking count updated",
+        res.send({
+          insertedId: result.insertedId,
+          message: "Booking saved. Class & Trainer booking count updated",
+        });
+      } catch (error) {
+        console.error("Booking insert error:", error);
+        res.status(500).send({ error: "❌ Failed to save booking" });
+      }
     });
-  } catch (error) {
-    console.error("Booking insert error:", error);
-    res.status(500).send({ error: "❌ Failed to save booking" });
-  }
-});
 
     app.post("/user", async (req, res) => {
-      const userData = req.body;
+      const userData = req.body;  
+      const uesr = req.body.email
+      console.log(uesr);
+      
       userData.role = "member";
       userData.created_at = new Date().toISOString();
       userData.last_loggedIn = new Date().toISOString();
@@ -480,17 +526,12 @@ async function run() {
       res.send(result);
     });
 
-    app.post('/forums',async  (req,res)=>{
-
-      const forumsPost= req.body 
+    app.post("/forums", async (req, res) => {
+      const forumsPost = req.body;
       console.log(forumsPost);
-      const result =  await forumCollection.insertOne(forumsPost)
-      res.send(result)
-
-    }
-           
-
-    )
+      const result = await forumCollection.insertOne(forumsPost);
+      res.send(result);
+    });
     // -------------------------------------// patch method all _ ________________________
 
     app.patch("/trainer/approve/:id", async (req, res) => {
@@ -578,95 +619,95 @@ async function run() {
       }
     });
 
+    app.patch("/forums/:id/vote", async (req, res) => {
+      const postId = req.params.id;
+      const { voteType, userEmail } = req.body;
 
+      try {
+        const post = await forumCollection.findOne({
+          _id: new ObjectId(postId),
+        });
+        if (!post) return res.status(404).send({ message: "Post not found" });
 
- app.patch("/forums/:id/vote", async (req, res) => {
-  const postId = req.params.id;
-  const { voteType, userEmail } = req.body;
+        let upvoteCount = post.upvoteCount || 0;
+        let downvoteCount = post.downvoteCount || 0;
 
-  try {
-    const post = await forumCollection.findOne({ _id: new ObjectId(postId) });
-    if (!post) return res.status(404).send({ message: "Post not found" });
+        const existingVote = post.voters?.find(
+          (v) => v.userEmail === userEmail
+        );
 
-    let upvoteCount = post.upvoteCount || 0;
-    let downvoteCount = post.downvoteCount || 0;
+        // ✅ 1. First time voting
+        if (!existingVote) {
+          const updateFields = {
+            voters: [...(post.voters || []), { userEmail, voteType }],
+          };
+          if (voteType === "upvote") upvoteCount += 1;
+          else if (voteType === "downvote") downvoteCount += 1;
 
-    const existingVote = post.voters?.find(v => v.userEmail === userEmail);
+          await forumCollection.updateOne(
+            { _id: new ObjectId(postId) },
+            {
+              $set: {
+                upvoteCount,
+                downvoteCount,
+                voters: updateFields.voters,
+              },
+            }
+          );
 
-    // ✅ 1. First time voting
-    if (!existingVote) {
-      const updateFields = { voters: [...(post.voters || []), { userEmail, voteType }] };
-      if (voteType === "upvote") upvoteCount += 1;
-      else if (voteType === "downvote") downvoteCount += 1;
+          return res.send({ message: "Vote added" });
+        }
 
-      await forumCollection.updateOne(
-        { _id: new ObjectId(postId) },
-        {
-          $set: {
-            upvoteCount,
-            downvoteCount,
-            voters: updateFields.voters
+        // 🟡 2. Same vote again → remove vote
+        if (existingVote.voteType === voteType) {
+          const updatedVoters = post.voters.filter(
+            (v) => v.userEmail !== userEmail
+          );
+          if (voteType === "upvote") upvoteCount -= 1;
+          else if (voteType === "downvote") downvoteCount -= 1;
+
+          await forumCollection.updateOne(
+            { _id: new ObjectId(postId) },
+            {
+              $set: {
+                upvoteCount,
+                downvoteCount,
+                voters: updatedVoters,
+              },
+            }
+          );
+
+          return res.send({ message: "Vote removed" });
+        }
+
+        // 🔁 3. Switch vote → remove old, add new
+        const updatedVoters = post.voters.map((v) =>
+          v.userEmail === userEmail ? { userEmail, voteType } : v
+        );
+        if (voteType === "upvote") {
+          upvoteCount += 1;
+          downvoteCount -= 1;
+        } else if (voteType === "downvote") {
+          downvoteCount += 1;
+          upvoteCount -= 1;
+        }
+
+        await forumCollection.updateOne(
+          { _id: new ObjectId(postId) },
+          {
+            $set: {
+              upvoteCount,
+              downvoteCount,
+              voters: updatedVoters,
+            },
           }
-        }
-      );
+        );
 
-      return res.send({ message: "Vote added" });
-    }
-
-    // 🟡 2. Same vote again → remove vote
-    if (existingVote.voteType === voteType) {
-      const updatedVoters = post.voters.filter(v => v.userEmail !== userEmail);
-      if (voteType === "upvote") upvoteCount -= 1;
-      else if (voteType === "downvote") downvoteCount -= 1;
-
-      await forumCollection.updateOne(
-        { _id: new ObjectId(postId) },
-        {
-          $set: {
-            upvoteCount,
-            downvoteCount,
-            voters: updatedVoters
-          }
-        }
-      );
-
-      return res.send({ message: "Vote removed" });
-    }
-
-    // 🔁 3. Switch vote → remove old, add new
-    const updatedVoters = post.voters.map(v =>
-      v.userEmail === userEmail ? { userEmail, voteType } : v
-    );
-    if (voteType === "upvote") {
-      upvoteCount += 1;
-      downvoteCount -= 1;
-    } else if (voteType === "downvote") {
-      downvoteCount += 1;
-      upvoteCount -= 1;
-    }
-
-    await forumCollection.updateOne(
-      { _id: new ObjectId(postId) },
-      {
-        $set: {
-          upvoteCount,
-          downvoteCount,
-          voters: updatedVoters
-        }
+        return res.send({ message: "Vote switched" });
+      } catch (err) {
+        res.status(500).send({ message: err.message });
       }
-    );
-
-    return res.send({ message: "Vote switched" });
-  } catch (err) {
-    res.status(500).send({ message: err.message });
-  }
-});
-
-
-
-
-
-
+    });
 
     // ------------------------------------- Delete method all ------------------
 
