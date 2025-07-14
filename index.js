@@ -36,11 +36,10 @@ const verifyToken = async (req, res, next) => {
 
   try {
     const decoded = await admin.auth().verifyIdToken(token);
-   
+
     req.user = decoded;
 
     console.log(req.user);
-    
   } catch {
     return res.status(401).send({ message: "unauthorized access" });
   }
@@ -94,6 +93,18 @@ async function run() {
       }
     });
 
+    app.get("/top-trainers", async (req, res) => {
+      try {
+        const topTrainers = await trainerCollection
+          .find()
+          .sort({ bookCount: -1 })
+          .limit(3)
+          .toArray();
+        res.send(topTrainers);
+      } catch (error) {
+        res.status(500).send({ message: "Server error", error });
+      }
+    });
     //  get data
     app.get("/reviews", async (req, res) => {
       try {
@@ -471,10 +482,10 @@ async function run() {
     });
 
     app.post("/user", async (req, res) => {
-      const userData = req.body;  
-      const uesr = req.body.email
+      const userData = req.body;
+      const uesr = req.body.email;
       console.log(uesr);
-      
+
       userData.role = "member";
       userData.created_at = new Date().toISOString();
       userData.last_loggedIn = new Date().toISOString();
