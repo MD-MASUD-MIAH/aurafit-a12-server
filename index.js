@@ -69,6 +69,45 @@ async function run() {
     const reviewingCollection = db.collection("review");
     const forumCollection = db.collection("forum");
 
+
+
+    const verifyAdmin = async (req, res, next) => {
+      const email = req?.user?.email
+      const user = await usersCollection.findOne({
+        email,
+      })
+      console.log(user?.role)
+      if (!user || user?.role !== 'admin')
+        return res
+          .status(403)
+          .send({ message: 'Admin only Actions!', role: user?.role })
+
+      next()
+    }
+
+
+      const verifyTrainer = async (req, res, next) => {
+      const email = req?.user?.email
+      const user = await usersCollection.findOne({
+        email,
+      })
+      console.log(user?.role)
+      if (!user || user?.role !== 'trainer')
+        return res
+          .status(403)
+          .send({ message: 'Admin only Actions!', role: user?.role })
+
+      next()
+    }
+
+
+
+      app.get('/user/role/:email', async (req, res) => {
+      const email = req.params.email
+      const result = await usersCollection.findOne({ email })
+      if (!result) return res.status(404).send({ message: 'User Not Found.' })
+      res.send({ role: result?.role })
+    })
     app.post("/create-payment-intent", async (req, res) => {
       const formData = req.body;
 
@@ -229,7 +268,7 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/subscribers", async (req, res) => {
+    app.get("/subscribers",verifyToken,verifyAdmin, async (req, res) => {
       const result = await subscribersCollection
         .find()
         .sort({ createdAt: -1 })
@@ -374,7 +413,8 @@ async function run() {
     app.get("/class-names", async (req, res) => {
       try {
         const classNames = await classCollection
-          .find({}, { projection: { name: 1, _id: 0 } })
+          .find({}, { projection: { 
+skillName: 1, _id: 0 } })
           .toArray();
 
         res.send(classNames);
@@ -383,22 +423,41 @@ async function run() {
       }
     });
 
-    app.get("/trainer/bookings/:email", async (req, res) => {
-      const trainerEmail = req?.params.email;
+  app.get("/trainer/bookings/:id", verifyTrainer, async (req, res) => {
+  const id = req.params.id;
 
-      console.log(trainerEmail);
+  if (!ObjectId.isValid(id)) {
+    return res.status(400).send({ message: "Invalid trainer ID" });
+  }
 
-      try {
-        const result = await BookingCollection.find({
-          trainerId: trainerEmail,
-        }).toArray();
+  try {
+    // Step 1: Find trainer by _id
+    const trainer = await trainerCollection.findOne({ _id: new ObjectId(id) });
 
-        res.send(result);
-      } catch (error) {
-        console.error("Error fetching bookings for trainer:", error);
-        res.status(500).json({ message: "Internal Server Error" });
-      }
-    });
+    if (!trainer) {
+      return res.status(404).send({ message: "Trainer not found" });
+    }
+
+    const timeSlots = trainer.timeSlots || [];
+
+    // Step 2: Find all bookings by this trainer
+    const bookings = await BookingCollection.find({ trainerId: id }).toArray();
+
+    // Step 3: Filter bookings where selectedSlot matches any of the trainer's timeSlots
+    const matchedBookings = bookings.filter((booking) =>
+      timeSlots.includes(booking.selectedSlot)
+    );
+
+    if (matchedBookings.length > 0) {
+      res.send(matchedBookings); // ✅ Return only matched bookings
+    } else {
+      res.send([]); // ❌ No matches found
+    }
+  } catch (error) {
+    console.error("Error checking slot-matched bookings:", error);
+    res.status(500).send({ message: "Internal Server Error" });
+  }
+});
 
     app.get("/trainers-and-admins/:email", async (req, res) => {
       try {
@@ -606,29 +665,46 @@ async function run() {
       }
     });
 
-    app.patch("/trainer/:email", async (req, res) => {
-      const { email } = req.params;
-      const { availableDays, timeSlots, classes, skills } = req.body;
+   app.patch("/trainer/:email", async (req, res) => {
+  const { email } = req.params;
 
-      try {
-        const result = await trainerCollection.updateOne(
-          { email },
-          {
-            $set: {
-              availableDays,
-              timeSlots,
+  console.log(email);
+  
+  const { availableDays, timeSlots,  skills: newSkills } = req.body;
 
-              skills, // <== Add this line
-            },
-          }
-        );
+  try {
+  
+    const trainer = await trainerCollection.findOne({ email });
 
-        res.send(result);
-      } catch (error) {
-        console.error("Update error:", error);
-        res.status(500).send({ message: "Failed to update trainer data" });
+    if (!trainer) {
+      return res.status(404).send({ message: "Trainer not found" });
+    }
+
+    const previousSkills = trainer.skills || [];
+
+    // 2. আগের skills + নতুন skills merge করে unique list বানাও
+    const mergedSkills = [...new Set([...previousSkills, ...newSkills])];
+
+    // 3. Update করো
+    const result = await trainerCollection.updateOne(
+      { email },
+      {
+        $set: {
+          availableDays,
+          timeSlots,
+        
+          skills: mergedSkills,
+        },
       }
-    });
+    );
+
+    res.send(result);
+  } catch (error) {
+    console.error("Update error:", error);
+    res.status(500).send({ message: "Failed to update trainer data" });
+  }
+});
+
 
     app.patch("/forums/:id/vote", async (req, res) => {
       const postId = req.params.id;
