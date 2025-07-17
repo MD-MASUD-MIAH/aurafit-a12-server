@@ -97,6 +97,26 @@ async function run() {
       next();
     };
 
+    const verifyAdminAndTrainer = async (req, res, next) => {
+  const email = req?.user?.email;
+
+  if (!email) {
+    return res.status(401).send({ message: "Unauthorized" });
+  }
+
+  const user = await usersCollection.findOne({ email });
+
+  console.log("🔍 Checking role:", user?.role);
+
+  if (!user || (user.role !== "admin" && user.role !== "trainer")) {
+    return res.status(403).send({ message: "Forbidden access" });
+  }
+
+  // ✅ Passed check
+  next();
+};
+
+
     app.get("/user/role/:email", async (req, res) => {
       const email = req.params.email;
       const result = await usersCollection.findOne({ email });
@@ -213,7 +233,7 @@ async function run() {
       }
     });
 
-    app.get("/slots/:email", async (req, res) => {
+    app.get("/slots/:email", verifyToken, verifyTrainer, async (req, res) => {
       const email = req.params.email;
 
       try {
@@ -281,7 +301,17 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/pending-trainer", async (req, res) => {
+
+    app.get("/trainerAdmin", verifyToken,verifyAdmin,async (req, res) => {
+      const result = await trainerCollection
+        .find({ status: "trainer" })
+        .sort({ createdAt: -1 })
+        .toArray();
+
+      res.send(result);
+    });
+
+    app.get("/pending-trainer", verifyToken, verifyAdmin, async (req, res) => {
       try {
         const result = await trainerCollection
           .find({ status: "pending" })
@@ -405,7 +435,7 @@ async function run() {
       }
     });
 
-    app.get("/class-names", async (req, res) => {
+    app.get("/class-names", verifyToken, verifyTrainer, async (req, res) => {
       try {
         const classNames = await classCollection
           .find(
@@ -425,45 +455,50 @@ async function run() {
       }
     });
 
-    app.get("/trainer/bookings/:id", verifyTrainer, async (req, res) => {
-      const id = req.params.id;
+    app.get(
+      "/trainer/bookings/:id",
+      verifyToken,
+      verifyTrainer,
+      async (req, res) => {
+        const id = req.params.id;
 
-      if (!ObjectId.isValid(id)) {
-        return res.status(400).send({ message: "Invalid trainer ID" });
-      }
-
-      try {
-        // Step 1: Find trainer by _id
-        const trainer = await trainerCollection.findOne({
-          _id: new ObjectId(id),
-        });
-
-        if (!trainer) {
-          return res.status(404).send({ message: "Trainer not found" });
+        if (!ObjectId.isValid(id)) {
+          return res.status(400).send({ message: "Invalid trainer ID" });
         }
 
-        const timeSlots = trainer.timeSlots || [];
+        try {
+          // Step 1: Find trainer by _id
+          const trainer = await trainerCollection.findOne({
+            _id: new ObjectId(id),
+          });
 
-        // Step 2: Find all bookings by this trainer
-        const bookings = await BookingCollection.find({
-          trainerId: id,
-        }).toArray();
+          if (!trainer) {
+            return res.status(404).send({ message: "Trainer not found" });
+          }
 
-        // Step 3: Filter bookings where selectedSlot matches any of the trainer's timeSlots
-        const matchedBookings = bookings.filter((booking) =>
-          timeSlots.includes(booking.selectedSlot)
-        );
+          const timeSlots = trainer.timeSlots || [];
 
-        if (matchedBookings.length > 0) {
-          res.send(matchedBookings); // ✅ Return only matched bookings
-        } else {
-          res.send([]); // ❌ No matches found
+          // Step 2: Find all bookings by this trainer
+          const bookings = await BookingCollection.find({
+            trainerId: id,
+          }).toArray();
+
+          // Step 3: Filter bookings where selectedSlot matches any of the trainer's timeSlots
+          const matchedBookings = bookings.filter((booking) =>
+            timeSlots.includes(booking.selectedSlot)
+          );
+
+          if (matchedBookings.length > 0) {
+            res.send(matchedBookings); // ✅ Return only matched bookings
+          } else {
+            res.send([]); // ❌ No matches found
+          }
+        } catch (error) {
+          console.error("Error checking slot-matched bookings:", error);
+          res.status(500).send({ message: "Internal Server Error" });
         }
-      } catch (error) {
-        console.error("Error checking slot-matched bookings:", error);
-        res.status(500).send({ message: "Internal Server Error" });
       }
-    });
+    );
 
     app.get("/trainers-and-admins/:email", async (req, res) => {
       try {
@@ -508,7 +543,19 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/booked", async (req, res) => {
+    app.get("/totalbooked", async (req, res) => {
+      try {
+        const result = await BookingCollection.find()
+          .sort({ _id: -1 })
+          .toArray();
+
+        res.send(result);
+      } catch (error) {
+        console.error("Error fetching booked data:", error);
+        res.status(500).send({ error: "Failed to fetch bookings" });
+      }
+    });
+    app.get("/booked",verifyToken,verifyAdmin, async (req, res) => {
       try {
         const result = await BookingCollection.find()
           .sort({ _id: -1 })
@@ -597,7 +644,7 @@ async function run() {
       res.send(result);
     });
 
-    app.post("/addClass", async (req, res) => {
+    app.post("/addClass",verifyToken,verifyAdmin, async (req, res) => {
       const ClassData = req.body;
       const result = await classCollection.insertOne(ClassData);
 
@@ -610,7 +657,7 @@ async function run() {
       res.send(result);
     });
 
-    app.post("/forums", async (req, res) => {
+    app.post("/forums",verifyToken,verifyAdminAndTrainer, async (req, res) => {
       const forumsPost = req.body;
       console.log(forumsPost);
       const result = await forumCollection.insertOne(forumsPost);
@@ -679,7 +726,7 @@ async function run() {
       }
     });
 
-    app.patch("/trainer/:email", async (req, res) => {
+    app.patch("/trainer/:email",verifyToken,verifyTrainer, async (req, res) => {
       const { email } = req.params;
 
       console.log(email);
@@ -845,44 +892,51 @@ async function run() {
       }
     });
 
-    app.delete("/slots/:email", verifyToken, async (req, res) => {
-      try {
-        const email = req.params.email;
-        const slot = req.query.slot;
+    app.delete(
+      "/slots/:email",
+      verifyToken,
+      verifyTrainer,
+      async (req, res) => {
+        try {
+          const email = req.params.email;
+          const slot = req.query.slot;
 
-        console.log("server side", email, req.user.email, slot);
+          console.log("server side", email, req.user.email, slot);
 
-        // Check if the requesting user is authorized
-        if (req?.user?.email !== email) {
-          return res
-            .status(403)
-            .json({ message: "Unauthorized to delete slots" });
+          // Check if the requesting user is authorized
+          if (req?.user?.email !== email) {
+            return res
+              .status(403)
+              .json({ message: "Unauthorized to delete slots" });
+          }
+
+          // Find the trainer
+          const trainer = await trainerCollection.findOne({
+            email,
+            status: "trainer",
+          });
+
+          if (!trainer) {
+            return res.status(404).json({ message: "Trainer not found" });
+          }
+
+          // Remove the slot from the array
+          const updatedSlots = trainer.timeSlots.filter((s) => s !== slot);
+
+          await trainerCollection.updateOne(
+            { email },
+            { $set: { timeSlots: updatedSlots } }
+          );
+
+          res.status(200).json({ message: "Slot deleted successfully" });
+        } catch (error) {
+          console.error("Error deleting slot:", error);
+          res
+            .status(500)
+            .json({ message: "Server error", error: error.message });
         }
-
-        // Find the trainer
-        const trainer = await trainerCollection.findOne({
-          email,
-          status: "trainer",
-        });
-
-        if (!trainer) {
-          return res.status(404).json({ message: "Trainer not found" });
-        }
-
-        // Remove the slot from the array
-        const updatedSlots = trainer.timeSlots.filter((s) => s !== slot);
-
-        await trainerCollection.updateOne(
-          { email },
-          { $set: { timeSlots: updatedSlots } }
-        );
-
-        res.status(200).json({ message: "Slot deleted successfully" });
-      } catch (error) {
-        console.error("Error deleting slot:", error);
-        res.status(500).json({ message: "Server error", error: error.message });
       }
-    });
+    );
 
     await client.connect();
     await client.db("admin").command({ ping: 1 });
