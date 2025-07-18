@@ -12,7 +12,7 @@ const port = process.env.PORT || 4000;
 app.use(express.json());
 app.use(
   cors({
-    origin: "http://localhost:5173",
+    origin: "http://localhost:5174",
     credentials: true,
   })
 );
@@ -39,7 +39,7 @@ const verifyToken = async (req, res, next) => {
 
     req.user = decoded;
 
-    console.log(req.user);
+    
   } catch {
     return res.status(401).send({ message: "unauthorized access" });
   }
@@ -74,7 +74,7 @@ async function run() {
       const user = await usersCollection.findOne({
         email,
       });
-      console.log(user?.role);
+     
       if (!user || user?.role !== "admin")
         return res
           .status(403)
@@ -88,7 +88,7 @@ async function run() {
       const user = await usersCollection.findOne({
         email,
       });
-      console.log(user?.role);
+    
       if (!user || user?.role !== "trainer")
         return res
           .status(403)
@@ -101,7 +101,7 @@ async function run() {
       const user = await usersCollection.findOne({
         email,
       });
-      console.log(user?.role);
+    
       if (!user || user?.role !== "member")
         return res
           .status(403)
@@ -119,7 +119,7 @@ async function run() {
 
       const user = await usersCollection.findOne({ email });
 
-      console.log("🔍 Checking role:", user?.role);
+      
 
       if (!user || (user.role !== "admin" && user.role !== "trainer")) {
         return res.status(403).send({ message: "Forbidden access" });
@@ -154,7 +154,7 @@ async function run() {
 
         res.send({ clientSecret: paymentIntent.client_secret });
       } catch (err) {
-        console.error("Stripe error:", err);
+       
         res.status(500).send({ error: err.message });
       }
     });
@@ -181,7 +181,7 @@ async function run() {
 
         res.send(reviews);
       } catch (error) {
-        console.error("Error fetching reviews:", error.message);
+       
         res.status(500).send({ message: "Failed to load reviews" });
       }
     });
@@ -196,7 +196,7 @@ async function run() {
 
         res.send(topClasses);
       } catch (error) {
-        console.error("Error fetching top booked classes:", error);
+        
         res.status(500).send({ message: "Internal Server Error" });
       }
     });
@@ -204,7 +204,7 @@ async function run() {
     app.get("/booked/:email", verifyToken, verifyMember, async (req, res) => {
       const userEmail = req.params.email;
 
-      console.log(userEmail);
+     
 
       try {
         const result = await BookingCollection.aggregate([
@@ -240,7 +240,7 @@ async function run() {
 
         res.send(result);
       } catch (error) {
-        console.error(error);
+       
         res.status(500).send({ message: "Failed to fetch booking data" });
       }
     });
@@ -285,7 +285,7 @@ async function run() {
 
         res.send(classes);
       } catch (error) {
-        console.error("Error fetching classes for trainer:", error);
+      
         res.status(500).json({ message: "Internal server error" });
       }
     });
@@ -349,7 +349,7 @@ async function run() {
           });
         }
 
-        // ✅ আগের aggregate স্টেপগুলো
+      
         pipeline.push(
           {
             $lookup: {
@@ -409,7 +409,7 @@ async function run() {
 
         res.send(result);
       } catch (error) {
-        console.error("Error fetching classes with trainers:", error);
+       
         res.status(500).json({ message: "Internal Server Error" });
       }
     });
@@ -489,23 +489,23 @@ async function run() {
 
           const timeSlots = trainer.timeSlots || [];
 
-          // Step 2: Find all bookings by this trainer
+        
           const bookings = await BookingCollection.find({
             trainerId: id,
           }).toArray();
 
-          // Step 3: Filter bookings where selectedSlot matches any of the trainer's timeSlots
+        
           const matchedBookings = bookings.filter((booking) =>
             timeSlots.includes(booking.selectedSlot)
           );
 
           if (matchedBookings.length > 0) {
-            res.send(matchedBookings); // ✅ Return only matched bookings
+            res.send(matchedBookings); 
           } else {
-            res.send([]); // ❌ No matches found
+            res.send([]); 
           }
         } catch (error) {
-          console.error("Error checking slot-matched bookings:", error);
+          
           res.status(500).send({ message: "Internal Server Error" });
         }
       }
@@ -528,7 +528,7 @@ async function run() {
 
         res.status(200).json(user);
       } catch (error) {
-        console.error("Error fetching user:", error);
+       
         res.status(500).json({ message: "Internal Server Error" });
       }
     });
@@ -562,7 +562,7 @@ async function run() {
 
         res.send(result);
       } catch (error) {
-        console.error("Error fetching booked data:", error);
+      
         res.status(500).send({ error: "Failed to fetch bookings" });
       }
     });
@@ -574,7 +574,7 @@ async function run() {
 
         res.send(result);
       } catch (error) {
-        console.error("Error fetching booked data:", error);
+      
         res.status(500).send({ error: "Failed to fetch bookings" });
       }
     });
@@ -607,7 +607,7 @@ async function run() {
           message: "Booking saved. Class & Trainer booking count updated",
         });
       } catch (error) {
-        console.error("Booking insert error:", error);
+       
         res.status(500).send({ error: "❌ Failed to save booking" });
       }
     });
@@ -615,7 +615,7 @@ async function run() {
     app.post("/user", async (req, res) => {
       const userData = req.body;
       const uesr = req.body.email;
-      console.log(uesr);
+     
 
       userData.role = "member";
       userData.created_at = new Date().toISOString();
@@ -624,17 +624,16 @@ async function run() {
         email: userData?.email,
       };
       const alreadySignUp = await usersCollection.findOne(query);
-      console.log("User already exists: ", !!alreadySignUp);
+     
       if (!!alreadySignUp) {
-        console.log("Updating user data......");
+     
         const result = await usersCollection.updateOne(query, {
           $set: { last_loggedIn: new Date().toISOString() },
         });
         return res.send(result);
       }
 
-      console.log("Creating user data......");
-
+     
       const result = await usersCollection.insertOne(userData);
       res.send(result);
     });
@@ -674,7 +673,7 @@ async function run() {
       verifyAdminAndTrainer,
       async (req, res) => {
         const forumsPost = req.body;
-        console.log(forumsPost);
+       
         const result = await forumCollection.insertOne(forumsPost);
         res.send(result);
       }
@@ -695,7 +694,7 @@ async function run() {
 
         const email = trainer.email;
 
-        console.log(email);
+       
 
         // Step 2: Update trainerCollection status
         const trainerUpdateResult = await trainerCollection.updateOne(
@@ -715,7 +714,7 @@ async function run() {
           message: "Trainer approved successfully",
         });
       } catch (error) {
-        console.error(error);
+       
         res.status(500).send({ error: "Failed to approve trainer." });
       }
     });
@@ -737,7 +736,7 @@ async function run() {
 
         res.send({ message: "Trainer rejected successfully", result });
       } catch (error) {
-        console.error("Error rejecting trainer:", error);
+       
         res.status(500).send({ error: "Failed to reject trainer." });
       }
     });
@@ -749,7 +748,7 @@ async function run() {
       async (req, res) => {
         const { email } = req.params;
 
-        console.log(email);
+       
 
         const { availableDays, timeSlots, skills: newSkills } = req.body;
 
@@ -762,10 +761,10 @@ async function run() {
 
           const previousSkills = trainer.skills || [];
 
-          // 2. আগের skills + নতুন skills merge করে unique list বানাও
+       
           const mergedSkills = [...new Set([...previousSkills, ...newSkills])];
 
-          // 3. Update করো
+      
           const result = await trainerCollection.updateOne(
             { email },
             {
@@ -780,7 +779,7 @@ async function run() {
 
           res.send(result);
         } catch (error) {
-          console.error("Update error:", error);
+       
           res.status(500).send({ message: "Failed to update trainer data" });
         }
       }
@@ -908,7 +907,7 @@ async function run() {
           updated: updateResult,
         });
       } catch (error) {
-        console.error("Error deleting trainer:", error);
+       
         res.status(500).send({ error: "Failed to delete trainer." });
       }
     });
@@ -922,7 +921,7 @@ async function run() {
           const email = req.params.email;
           const slot = req.query.slot;
 
-          console.log("server side", email, req.user.email, slot);
+         
 
           // Check if the requesting user is authorized
           if (req?.user?.email !== email) {
@@ -951,7 +950,7 @@ async function run() {
 
           res.status(200).json({ message: "Slot deleted successfully" });
         } catch (error) {
-          console.error("Error deleting slot:", error);
+         
           res
             .status(500)
             .json({ message: "Server error", error: error.message });
