@@ -12,7 +12,7 @@ const port = process.env.PORT || 4000;
 app.use(express.json());
 app.use(
   cors({
-    origin: "http://localhost:5174",
+    origin: "https://fiteness-b11a12.web.app",
     credentials: true,
   })
 );
@@ -163,7 +163,7 @@ async function run() {
       try {
         const topTrainers = await trainerCollection
           .find({ status:"trainer"})
-          .sort({ bookCount: -1 })
+         
           .limit(3)
           .toArray();
         res.send(topTrainers);
