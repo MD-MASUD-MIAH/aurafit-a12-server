@@ -96,26 +96,38 @@ async function run() {
 
       next();
     };
+    const verifyMember = async (req, res, next) => {
+      const email = req?.user?.email;
+      const user = await usersCollection.findOne({
+        email,
+      });
+      console.log(user?.role);
+      if (!user || user?.role !== "member")
+        return res
+          .status(403)
+          .send({ message: "member only Actions!", role: user?.role });
+
+      next();
+    };
 
     const verifyAdminAndTrainer = async (req, res, next) => {
-  const email = req?.user?.email;
+      const email = req?.user?.email;
 
-  if (!email) {
-    return res.status(401).send({ message: "Unauthorized" });
-  }
+      if (!email) {
+        return res.status(401).send({ message: "Unauthorized" });
+      }
 
-  const user = await usersCollection.findOne({ email });
+      const user = await usersCollection.findOne({ email });
 
-  console.log("🔍 Checking role:", user?.role);
+      console.log("🔍 Checking role:", user?.role);
 
-  if (!user || (user.role !== "admin" && user.role !== "trainer")) {
-    return res.status(403).send({ message: "Forbidden access" });
-  }
+      if (!user || (user.role !== "admin" && user.role !== "trainer")) {
+        return res.status(403).send({ message: "Forbidden access" });
+      }
 
-  // ✅ Passed check
-  next();
-};
-
+      // ✅ Passed check
+      next();
+    };
 
     app.get("/user/role/:email", async (req, res) => {
       const email = req.params.email;
@@ -150,7 +162,7 @@ async function run() {
     app.get("/top-trainers", async (req, res) => {
       try {
         const topTrainers = await trainerCollection
-          .find()
+          .find({ status:"trainer"})
           .sort({ bookCount: -1 })
           .limit(3)
           .toArray();
@@ -189,7 +201,7 @@ async function run() {
       }
     });
 
-    app.get("/booked/:email", async (req, res) => {
+    app.get("/booked/:email", verifyToken, verifyMember, async (req, res) => {
       const userEmail = req.params.email;
 
       console.log(userEmail);
@@ -301,8 +313,7 @@ async function run() {
       res.send(result);
     });
 
-
-    app.get("/trainerAdmin", verifyToken,verifyAdmin,async (req, res) => {
+    app.get("/trainerAdmin", verifyToken, verifyAdmin, async (req, res) => {
       const result = await trainerCollection
         .find({ status: "trainer" })
         .sort({ createdAt: -1 })
@@ -421,7 +432,7 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/my-trainer-application", async (req, res) => {
+    app.get("/my-trainer-application", verifyToken,verifyMember,async (req, res) => {
       try {
         const result = await trainerCollection
           .find({
@@ -555,7 +566,7 @@ async function run() {
         res.status(500).send({ error: "Failed to fetch bookings" });
       }
     });
-    app.get("/booked",verifyToken,verifyAdmin, async (req, res) => {
+    app.get("/booked", verifyToken, verifyAdmin, async (req, res) => {
       try {
         const result = await BookingCollection.find()
           .sort({ _id: -1 })
@@ -644,28 +655,33 @@ async function run() {
       res.send(result);
     });
 
-    app.post("/addClass",verifyToken,verifyAdmin, async (req, res) => {
+    app.post("/addClass", verifyToken, verifyAdmin, async (req, res) => {
       const ClassData = req.body;
       const result = await classCollection.insertOne(ClassData);
 
       res.send(result);
     });
 
-    app.post("/review-post", async (req, res) => {
+    app.post("/review-post",verifyToken,verifyMember, async (req, res) => {
       const review = req.body;
       const result = await reviewingCollection.insertOne(review);
       res.send(result);
     });
 
-    app.post("/forums",verifyToken,verifyAdminAndTrainer, async (req, res) => {
-      const forumsPost = req.body;
-      console.log(forumsPost);
-      const result = await forumCollection.insertOne(forumsPost);
-      res.send(result);
-    });
+    app.post(
+      "/forums",
+      verifyToken,
+      verifyAdminAndTrainer,
+      async (req, res) => {
+        const forumsPost = req.body;
+        console.log(forumsPost);
+        const result = await forumCollection.insertOne(forumsPost);
+        res.send(result);
+      }
+    );
     // -------------------------------------// patch method all _ ________________________
 
-    app.patch("/trainer/approve/:id", async (req, res) => {
+    app.patch("/trainer/approve/:id",verifyToken,verifyAdmin, async (req, res) => {
       const id = req.params.id;
 
       try {
@@ -704,7 +720,7 @@ async function run() {
       }
     });
 
-    app.patch("/trainer/reject/:id", async (req, res) => {
+    app.patch("/trainer/reject/:id",verifyToken,verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const { feedback } = req.body;
 
@@ -726,44 +742,49 @@ async function run() {
       }
     });
 
-    app.patch("/trainer/:email",verifyToken,verifyTrainer, async (req, res) => {
-      const { email } = req.params;
+    app.patch(
+      "/trainer/:email",
+      verifyToken,
+      verifyTrainer,
+      async (req, res) => {
+        const { email } = req.params;
 
-      console.log(email);
+        console.log(email);
 
-      const { availableDays, timeSlots, skills: newSkills } = req.body;
+        const { availableDays, timeSlots, skills: newSkills } = req.body;
 
-      try {
-        const trainer = await trainerCollection.findOne({ email });
+        try {
+          const trainer = await trainerCollection.findOne({ email });
 
-        if (!trainer) {
-          return res.status(404).send({ message: "Trainer not found" });
-        }
-
-        const previousSkills = trainer.skills || [];
-
-        // 2. আগের skills + নতুন skills merge করে unique list বানাও
-        const mergedSkills = [...new Set([...previousSkills, ...newSkills])];
-
-        // 3. Update করো
-        const result = await trainerCollection.updateOne(
-          { email },
-          {
-            $set: {
-              availableDays,
-              timeSlots,
-
-              skills: mergedSkills,
-            },
+          if (!trainer) {
+            return res.status(404).send({ message: "Trainer not found" });
           }
-        );
 
-        res.send(result);
-      } catch (error) {
-        console.error("Update error:", error);
-        res.status(500).send({ message: "Failed to update trainer data" });
+          const previousSkills = trainer.skills || [];
+
+          // 2. আগের skills + নতুন skills merge করে unique list বানাও
+          const mergedSkills = [...new Set([...previousSkills, ...newSkills])];
+
+          // 3. Update করো
+          const result = await trainerCollection.updateOne(
+            { email },
+            {
+              $set: {
+                availableDays,
+                timeSlots,
+
+                skills: mergedSkills,
+              },
+            }
+          );
+
+          res.send(result);
+        } catch (error) {
+          console.error("Update error:", error);
+          res.status(500).send({ message: "Failed to update trainer data" });
+        }
       }
-    });
+    );
 
     app.patch("/forums/:id/vote", async (req, res) => {
       const postId = req.params.id;
