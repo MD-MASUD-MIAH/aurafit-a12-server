@@ -7,7 +7,8 @@ const cors = require("cors");
 const stripe = require("stripe")(process.env.STRIPE_SK_KEY);
 const port = process.env.PORT || 4000;
 
-//   meddleWare
+//   meddleWare 
+// ok
 
 app.use(express.json());
 app.use(
