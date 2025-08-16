@@ -13,7 +13,7 @@ const port = process.env.PORT || 4000;
 app.use(express.json());
 app.use(
   cors({
-    origin: "https://fiteness-b11a12.web.app",
+    origin: ["https://fiteness-b11a12.web.app","http://localhost:5173"],
     credentials: true,
   })
 );
@@ -336,84 +336,93 @@ async function run() {
       }
     });
 
-    app.get("/class", async (req, res) => {
-      try {
-        const search = req.query.search || "";
+   app.get("/class", async (req, res) => {
+  try {
+    const search = req.query.search || "";
+    const sort = req.query.sort || ""; // asc / desc
 
-        const pipeline = [];
+    const pipeline = [];
 
-        if (search) {
-          pipeline.push({
-            $match: {
-              skillName: { $regex: search, $options: "i" },
-            },
-          });
-        }
+    // 🔎 Search filter
+    if (search) {
+      pipeline.push({
+        $match: {
+          skillName: { $regex: search, $options: "i" },
+        },
+      });
+    }
 
-      
-        pipeline.push(
-          {
-            $lookup: {
-              from: "trainer",
-              let: { skill: { $toLower: "$skillName" } },
-              pipeline: [
-                {
-                  $addFields: {
-                    lowerSkills: {
-                      $map: {
-                        input: "$skills",
-                        as: "s",
-                        in: { $toLower: "$$s" },
-                      },
-                    },
+    // 🔗 Lookup trainers
+    pipeline.push(
+      {
+        $lookup: {
+          from: "trainer",
+          let: { skill: { $toLower: "$skillName" } },
+          pipeline: [
+            {
+              $addFields: {
+                lowerSkills: {
+                  $map: {
+                    input: "$skills",
+                    as: "s",
+                    in: { $toLower: "$$s" },
                   },
                 },
-                {
-                  $match: {
-                    $expr: {
-                      $and: [
-                        { $in: ["$$skill", "$lowerSkills"] },
-                        { $eq: ["$status", "trainer"] },
-                      ],
-                    },
-                  },
+              },
+            },
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $in: ["$$skill", "$lowerSkills"] },
+                    { $eq: ["$status", "trainer"] },
+                  ],
                 },
-                {
-                  $project: {
-                    fullName: 1,
-                    photo: 1,
-                    email: 1,
-                    _id: 1,
-                  },
-                },
-              ],
-              as: "trainers",
+              },
             },
-          },
-          {
-            $addFields: {
-              trainers: { $slice: ["$trainers", 5] },
+            {
+              $project: {
+                fullName: 1,
+                photo: 1,
+                email: 1,
+                _id: 1,
+              },
             },
-          },
-          {
-            $project: {
-              className: 1,
-              skillName: 1,
-              image: 1,
-              details: 1,
-              trainers: 1,
-            },
-          }
-        );
-
-        const result = await classCollection.aggregate(pipeline).toArray();
-
-        res.send(result);
-      } catch (error) {
-       
-        res.status(500).json({ message: "Internal Server Error" });
+          ],
+          as: "trainers",
+        },
+      },
+      {
+        $addFields: {
+          trainers: { $slice: ["$trainers", 5] },
+        },
+      },
+      {
+        $project: {
+          className: 1,
+          skillName: 1,
+          image: 1,
+          details: 1,
+          trainers: 1,
+          bookingCount: 1, // এখানে নিশ্চিত করো DB তে এই ফিল্ড আছে
+        },
       }
-    });
+    );
+
+    // 🔽 Sorting যোগ করা
+    if (sort === "asc") {
+      pipeline.push({ $sort: { bookingCount: 1 } }); // কম থেকে বেশি
+    } else if (sort === "desc") {
+      pipeline.push({ $sort: { bookingCount: -1 } }); // বেশি থেকে কম
+    }
+
+    const result = await classCollection.aggregate(pipeline).toArray();
+    res.send(result);
+  } catch (error) {
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+});
+
 
     app.get("/trainer/:id", async (req, res) => {
       const id = req.params.id;
