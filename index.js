@@ -336,6 +336,7 @@ async function run() {
       }
     });
 
+    // class data 
    app.get("/class", async (req, res) => {
   try {
     const search = req.query.search || "";
